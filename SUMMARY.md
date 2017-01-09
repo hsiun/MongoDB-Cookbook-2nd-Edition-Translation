@@ -17,4 +17,13 @@
     * [启动一个两个分片的简单分片环境](chapter1/recipe12.md)
     * [在shell中连接到分片并执行操作](chapter1/recipe13.md)
 * [第二章：命令行操作和索引](chapter2/README.md)
+    * [概览](chapter2/recipe1.md)
+    * [创建测试数据](chapter2/recipe2.md)
+    * [从Mongo shell执行简单查询，投射和分页操作](chapter2/recipe3.md)
+    * [从shell更新和删除数据](chapter2/recipe4.md)
+    * [为查询创建索引和视图](chapter2/recipe5.md)
+    * [在shell中创建背景索引和前景索引](chapter2/recipe6.md)
+    * [创建和理解稀疏索引](chapter2/recipe7.md)
+    * [使用TTL索引在固定时间间隔后过期文档](chapter2/recipe8.md)
+    * [使用TTL索引在给定时间间隔后过期文档](chapter2/recipe9.md)
 
