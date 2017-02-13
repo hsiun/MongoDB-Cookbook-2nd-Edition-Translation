@@ -110,6 +110,72 @@ db.postalCodes.find({state:'Maharashtra'}).explain()
 }
 ```
 
-`inputStage`域的值现在是`IXSCAN`，这表明现在索引目前明确是在使用的。留下的结果数和预期的一样，都是6446。如结果所示，在索引中扫描的对象数目和在集合中扫描的文档数现在都减少到相同的值了。这是因为现在我们使用索引来提供开始烧苗的文档，只有这样，被扫描的文档数才只是请求的文档数。这类似于使用字典的目录来查找字词，而不是翻阅真笨数来查找这个字词。正如预期，`excutionTimeMillis`的时间大幅减少。
+`inputStage`域的值现在是`IXSCAN`，这表明现在索引目前明确是在使用的。留下的结果数和预期的一样，都是6446。如结果所示，在索引中扫描的对象数目和在集合中扫描的文档数现在都减少到相同的值了。这是因为现在我们使用索引来提供开始烧苗的文档，只有这样，被扫描的文档数才只是请求的文档数。这类似于使用字典的目录来查找字词，而不是翻阅整本书来查找这个字词。正如预期，`excutionTimeMillis`的时间大幅减少。
+
 
 #### 使用覆盖索引提升性能
+这需要我们注意一个域，`executionStages`的值是`FETCH`，并且我们将了解这是什么意思。为了明白这个值是什么意思，我们需要简单的看看索引是如何执行的。
+
+索引存储了集合中正常文档域的子集。索引中的字段与创建索引的字段相同。然而，这个区域保持索引创建时候的排序。除了这个域以外，在索引中还存储了另外的值，这个值的作用是指向集合中原文档。因此，无论用户何时执行查询，如果查询包含存在索引的字段，则索引关联获取到的匹配集合。指针和匹配查询的索引实体一起存储，之后通过其他IO操作从集合中获取整个文档时，这个指针被直接返回给用户。
+
+这里`executionStages`的值是`FETCH`，这表明用户在查询中请求的数据不是整个出现在索引中的，但需要一个额外的IO操作通过索引的指针去集合中获取到这个文档。如果这个值是索引本身，就不再需要额外的操作去集合中获取文档，索引数据会直接返回。这就是我们所说的覆盖索引，这种情况下，`executionStages`的值将会是`IXSCAN`。
+
+在我们这里，我们只需要PIN码。因此，为什么不使用投影只获取我们需要的呢？这将是的索引只包含州名和PIN码作为索引，这样获取请求的数据就完全不需要从集合中检索原文档。这里的查询计划也是很有趣的。
+
+执行下列命令：
+```
+db.postalCodes.find({state:'Maharashtra'}, {pincode:1, _id:0}).explain()
+```
+
+这给了我们下面返回：
+```
+{
+"executionStages" : {
+ "stage" : "PROJECTION",
+…
+"inputStage" : {
+ "stage" : "IXSCAN",
+…
+ "nReturned" : 6446,
+ "totalDocsExamined" : 0,
+ "totalKeysExamined": 6446
+ "executionTimeMillis" : 4,
+…
+}
+```
+
+`totalDocsExamined`和`executionStage: PROJECTION `这两个域的值是值得关注的。如我们所料，我么从投影中请求的数据可以只从索引中获取。在这里，我们在索引中扫描了6446个试听，因此`totalKeysExamined`的值是6446。
+
+因为整个结果是从索引中获取的，我么恩的查询不会从集合中获取任何文档。因此，`totalDocsExamined`的值是0。
+
+因为这个集合很小，我么无法在查询时间上看到明显的差异。查询时间在打的集合上会更加明显。使用索引是很好的，且给我们提供了很好的性能。使用覆盖索引给我们提供了更好的性能。
+
+> MongoDB的结果解释在第三版中有了很大的改变。我建议稍微花几分钟浏览下文档< http://docs.mongodb.org/manual/
+reference/explain-results/>
+
+> 另外一件需要记得的事就是，如果文档有很多的域，尝试使用投影来获取这个域我们需要的数目。默认情况下`_id`域每次都会被获取。如果他不是索引的一部分，除非我们的执行计划设置` _id:0`来不获取他。执行覆盖查询是查询集合一个更有效的方式。
+
+#### 创建索引的一些忠告
+We will now see some pitfalls in index creation and some facts when an array field is used in
+the index.
+Some of the operators that do not use the index efficiently are the $where, $nin, and
+$exists operators. Whenever these operators are used in the query, one should bear in
+mind that a possible performance bottleneck might occur when the data size increases.
+Similarly, the $in operator must be preferred over the $or operator as both can be used to
+achieve more or less the same result. As an exercise, try to find the pincodes in the state of
+Maharashtra and Gujarat in the postalCodes collection. Write two queries: one using $or
+and one using the $in operator. Explain the plan for both these queries.
+What happens when an array field is used in the index?
+Mongo creates an index entry for each element present in the array field of a document. So, if
+there are 10 elements in an array in a document, there will be 10 index entries, one for each
+element in the array. However, there is a constraint while creating indexes containing array
+fields. When creating indexes using multiple fields, no more than one field can be of a type
+array, and this is done to prevent a possible explosion in the number of indexes on adding
+even a single element to the array used in the index. If we think of it carefully, an index entry
+is created for each element in the array. If multiple fields of the type array were allowed to be
+a part of an index, then we would have a large number of entries in the index, which would be
+a product of the length of these array fields. For example, a document added with two array
+fields, each of length 10, would add 100 entries to the index if it is allowed to create one index
+using these two array fields.
+This should be good enough, for now, to scratch the surfaces of a plain, vanilla index. We will
+see more options and types in the following few recipes.
